@@ -323,8 +323,8 @@ docsh()
     local lws='  '
 
     # Import ANSI strings for text styles, if necessary
-    [[ -z ${_cbo:-}  &&  $( type -t csi_strs ) == function ]] &&
-        csi_strs -d
+    [[ -z ${_cbo:-}  &&  $( type -t str_csi_vars ) == function ]] &&
+        str_csi_vars -d
 
     # Print header from title and/or description
     if [[ -n ${title:-} ]]
