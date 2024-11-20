@@ -1,7 +1,7 @@
-docsh()
-{
-    [[ $# -gt 0  &&  $1 == @(-h|--help) ]] &&
-    {
+docsh() {
+
+    [[ $# -gt 0  &&  $1 == @(-h|--help) ]] && {
+
         docsh -DT "Print documentation for shell functions and scripts.
 
         Usage
@@ -17,28 +17,26 @@ docsh()
         special characters like \\\$ and \\\`. Refer to 'Quoting' in 'man bash'. If the
         argument '-' is given as the doc-string, the doc-string is read from STDIN.
 
-        When printing the docstrings, consistent leading whitespace on lines after the
-        first one is removed. This allows the docstring to be indented naturally in
+        As an alternative to passing the doc-strings on the command line, the the '-f'
+        option can be used to get the doc-strings from the function. In that case, the
+        function should have its initial lines starting with whitespace and colons, e.g.
+        '    : '. Any comments in the function definition are ignored, as they are not
+        output by 'declare -pf'. For very simple docs of only a few lines, multiple
+        colon lines may suffice, but for longer docs, or those that contain characters
+        like '(', '<' or '$', a quoted here-doc could be used, like
+        ' : << 'EOF'\n ...\nEOF'. In this case, the 'EOF' marker may be preceded by any
+        whitespace, whether the here-doc is invoked with '<<' or '<<-', and must be
+        followed by a newline. A simpler option, though, is simply a multi-line string.
+        E.g. ' : \" ...\n ...\"'.
+
+        TODO (needs testing): As a third option, the doc-strings may be placed in a
+        separate file, then referenced from the first line of the function, like
+        ' : docsh ./myfile.txt' or ' : cat /path/to/file.md'.
+
+        When printing the docstrings, consistent leading whitespace is removed from
+        lines after the first one. This allows the docstring to be indented naturally in
         the source code, and also be well formatted when viewing a function with the
         \`type\` command.
-
-        When using the '-f' option to get the doc-strings from the function, the
-        function should have its initial lines starting with whitespace and colons, e.g.
-        '    : '. For very simple docs, you can use multiple colon lines, but for more
-        complex docs, which may contain '<' or '$', use a quoted here-doc, e.g.:
-
-             : << 'EOF'
-            this is a
-            long string that
-            documents the <func> \$abc
-            EOF
-
-        The 'EOF' marker may be preceded by any whitespace, whether the here-doc is
-        invoked with '<<' or '<<-', and must be followed by a newline.
-
-        TODO: As a third option, the doc-strings may be placed in a separate file, then
-        referenced from the first line of the function, like ' : docsh ./myfile.txt' or
-        ' : cat /path/to/file.md'.
 
         Options
 
@@ -50,9 +48,9 @@ docsh()
           : Render description as in -D, but use the provided string.
 
           -T
-          : Render a title above the printed docstring, which is obtained from the name
-            of the calling function. An extra newline is also added to the end of the
-            docstring.
+          : Render a title above the printed docstring, which is the name of the calling
+            function or the function indicated by '-f'. An extra newline is also added
+            after the docstring.
 
           -f <func-name>
           : Get the documentation from the function definition. See formatting notes,
@@ -116,7 +114,7 @@ docsh()
     # TODO:
     #
     # - consider building the test for e.g. '-h' option or 0 args into this command,
-    #   so scripts could simply call `docsh -t 0,h "$@" '...'` and docsh would either
+    #   so scripts could simply call `docsh -t 0,h "$@" -- '...'` and docsh would either
     #   return 0 or print the usage and return 1; then a return call after the docsh
     #   call would maintain the status
     #
@@ -137,111 +135,99 @@ docsh()
 
 
     # return on non-zero exit
-    trap 'trap-err $?
-          return' ERR
+    trap '
+        trap-err $?
+        return
+    ' ERR
 
-    trap 'trap - ERR RETURN
-          unset -f _colon_docs _here_docs _strip_ws' RETURN
+    trap '
+        unset -f _strip_ws
+        trap - ERR RETURN
+    ' RETURN
 
     # Parse args
     local OPT OPTARG OPTIND=1
-    local title desc doc_tests from_func
+    local show_title desc doc_tests func_nm
 
     while getopts "d:Df:t:T" OPT
     do
         case $OPT in
             ( d )  desc=$OPTARG ;;
             ( D )  desc=_from_body ;;
-            ( f )  from_func=$OPTARG ;;
-            ( T )  title=${FUNCNAME[1]} ;;
-            ( t )  doc_tests=$OPTARG; echo not implemented ;;  # TODO
+            ( f )  func_nm=$OPTARG ;;
+            ( T )  show_title=1 ;;
+            ( t )  doc_tests=$OPTARG; echo not implemented; return 2 ;;  # TODO
             ( ? )  err_msg 1 "Args: $*" ;;
         esac
     done
     shift $(( OPTIND - 1 ))
 
+    # set func_nm if not specified
+    [[ -z ${func_nm-} ]] && func_nm=${FUNCNAME[1]-}
 
-    _colon_docs()
-    {
-        # print any lines with leading ': ' at the top of the function definition
-        # e.g.
-        #   func ()
-        #   {
-        #       : this is
-        #       : the docstring
-        #       : of the function
-        #   }
+    # _colon_docs() {
 
-        local _filt
+    #     # print any lines with leading ': ' at the top of the function definition
+    #     # e.g.
+    #     #   func ()
+    #     #   {
+    #     #       : this is
+    #     #       : the docstring
+    #     #       : of the function
+    #     #   }
 
-        _filt='
-            # ignore first 2 lines
-            1,2 d
+    #     local _filt
 
-            # print next matching lines without the leading chars or last semicolons
-            /^[[:blank:]]*:[[:blank:]]?/ {
-                s/^[[:blank:]]*:[[:blank:]]?//
-                s/;$//
-                p; d; }
+    #     _filt='
+    #         # print next matching lines without the leading chars or last semicolons
+    #         /^[[:blank:]]*:[[:blank:]]?/ {
+    #             s/^[[:blank:]]*:[[:blank:]]?//
+    #             s/;$//
+    #             p; d; }
 
-            # quit on first non-matching line
-            q
-        '
-        declare -pf "$1" | sed -nE "$_filt"
-    }
+    #         # quit on first non-matching line
+    #         q
+    #     '
 
-    _here_docs()
-    {
-        # capture a here-doc with leading ': ' at the top of a function definition
-        # e.g.
-        #   func ()
-        #   {
-        #       : <<- 'EOF'
-        #       Script usage:
-        #           myscript [options] argument
-        #
-        #       Options:
-        #           -h, --help Show this message
-        #           -f, --foo This option does foo
-        #           -b, --bar This option does bar
-        #
-        #       EOF
-        #
-        #       echo "func body"
-        #       ...
-        #   }
+    #     sed -nE "$_filt" <<< "$1"
+    # }
 
-        local _filt mrkr ln
+    # _here_docs() {
 
-        # capture EOF marker and line no. of here-doc start
-        _filt="
-            # ignore first 2 lines
-            1,2 d
+    #     local _filt mrkr ln
 
-            # test for here-doc start
-            s/^[[:blank:]]*:[[:blank:]]*<<-?[[:blank:]]?['\"]?([[:alnum:]]+)['\"]?$/\1/
-            t h
+    #     # capture EOF marker and line no. of here-doc start
+    #     _filt="
+    #         # test for here-doc start
+    #         s/^[[:blank:]]*:[[:blank:]]*<<-?[[:blank:]]?['\"]?([[:alnum:]]+)['\"]?$/\1/
 
-            # quit on fail
-            q
+    #         # branch if found
+    #         t h
 
-            # print the here-doc EOF marker and line number
-            : h
-            p; =; q
-        "
-        read -r -d '' mrkr ln < <( declare -pf "$1" | sed -nE "$_filt" )
+    #         # quit on fail
+    #         q
 
-        # print here-doc, if any
-        [[ -z $mrkr ]] ||
-        {
-            _filt="$ln,/^[[:blank:]]*$mrkr$/ { p; d; }"
+    #         # print the here-doc EOF marker and line number
+    #         : h
+    #         p; =; q
+    #     "
+    #     read -r -d '' mrkr ln < <( sed -nE "$_filt" <<< "$1" )
 
-            declare -pf "$1" | sed -nE "$_filt" | sed '1 d; $ d;'
-        }
-    }
+    #     # print here-doc, if any
+    #     [[ -z $mrkr ]] ||
+    #     {
+    #         _filt="
+    #             1 d
+    #             \$ d
+    #             $ln,/^[[:blank:]]*$mrkr$/ { p; d; }
+    #         "
 
-    _strip_ws()
-    {
+    #         sed -nE "$_filt" <<< "$1"
+    #     }
+    # }
+
+    _strip_ws() {
+
         # - strip consistent whitespace from start of lines > 1
         # - ws is null if docs_body is a single line or no leading ws on lines 2+
         local ws _filt
@@ -267,14 +253,30 @@ docsh()
     # Get doc-strings from remaining arg(s) or function definition
     local docs_body
 
-    [[ $# -eq 0 ]] && from_func=${FUNCNAME[1]}
-
-    if [[ -n "$from_func" ]]
+    if [[ $# -eq 0 ]]
     then
-        docs_body=$( _here_docs "$from_func" )
+        # read function definition
+        local func_defn
+        func_defn=$( declare -pf "$func_nm" ) # | sed '1,2 d; $ d; s/;$//' )
 
-        [[ -n $docs_body ]] ||
-            docs_body=$( _colon_docs "$from_func" )
+        # parse with awk code from companion file
+        local awk_fn=$( dirname "${BASH_SOURCE[0]}" )/colon_docs.awk
+        [[ -r $awk_fn ]] \
+            || err_msg 2 "colon_docs.awk not found"
+
+        # The previous _here_docs, _colon_docs func have been
+        # moved to awk
+        docs_body=$( awk -f "$awk_fn" -- - <<< "$func_defn" )
+
+
+        # test for here-doc or multi-line string
+        # docs_body=$( _here_docs "$func_defn" )
+
+        # [[ -n $docs_body ]] ||
+        #     docs_body=$( _ml_str_docs "$func_defn" )
+
+        # [[ -n $docs_body ]] ||
+        #     docs_body=$( _colon_docs "$func_defn" )
 
         if [[ $( wc -l <<< "$docs_body" ) -eq 1 ]]
         then
@@ -295,6 +297,11 @@ docsh()
             {
                 docs_body=$( cat "$_fn" )
             }
+
+        elif [[ -z "$docs_body" ]]
+        then
+            # didn't get any docs
+            return 1
         fi
 
     elif [[ $1 == '-' ]]
@@ -313,7 +320,7 @@ docsh()
     docs_body=$( _strip_ws "$docs_body" )
 
     # Get description from line 1 of docs_body, if indicated
-    [[ ${desc:-} == _from_body ]] &&
+    [[ ${desc-} == _from_body ]] &&
     {
         desc=$( sed "1 q" <<< "$docs_body" )
         docs_body=$( sed "1 d" <<< "$docs_body" )
@@ -323,16 +330,17 @@ docsh()
     local lws='  '
 
     # Import ANSI strings for text styles, if necessary
-    [[ -z ${_cbo:-}  &&  $( type -t str_csi_vars ) == function ]] &&
+    [[ -z ${_cbo-}  &&  $( type -t str_csi_vars ) == function ]] &&
         str_csi_vars -d
 
+
     # Print header from title and/or description
-    if [[ -n ${title:-} ]]
+    if [[ -n ${show_title-} ]]
     then
         # Stylize title and add extra newlines
-        printf '\n%s%s' "$lws" "${_cul:-}${_cbo:-}$title${_crb:-}${_cru:-}"
+        printf '\n%s%s' "$lws" "${_cul-}${_cbo-}$func_nm${_crb-}${_cru-}"
 
-        if [[ -n ${desc:-} ]]
+        if [[ -n ${desc-} ]]
         then
             printf ' : %s' "$desc"
         fi
@@ -347,7 +355,7 @@ docsh()
         # add an extra newline after the body as well
         docs_body=${docs_body}$'\n'
 
-    elif [[ -n ${desc:-} ]]
+    elif [[ -n ${desc-} ]]
     then
         # Less newlines with only description
         printf '%s%s\n' "$lws" "$desc"
@@ -357,7 +365,7 @@ docsh()
     local style_filt
 
     style_filt="# Bold styling for common headings
-                s/^((Usage|Option|Command|Example|Note|Notable|Patterns)[^:]*)/${_cbo:-}\1${_crb:-}/
+                s/^((Usage|Option|Command|Example|Note|Notable|Patterns)[^:]*)/${_cbo-}\1${_crb-}/
 
                 # Dim URLs (regex is a bit naiive)
                 s|([a-zA-Z0-9]+://[a-zA-Z0-9@/.?&=-]+)|${_cdm}\1${_crd}|
@@ -366,7 +374,7 @@ docsh()
                 # ...
 
                 # Italics for text between \`...\`
-                s/(^|[^\`])\`([^\`]+)\`/\1${_cit:-}\2${_cri:-}/g
+                s/(^|[^\`])\`([^\`]+)\`/\1${_cit-}\2${_cri-}/g
 
                 # Add leading whitespace, for style
                 s/^/$lws/
@@ -374,11 +382,11 @@ docsh()
                 # Italics for multi-line text between \`\`\`...\`\`\`
                 # - lws must be added whenever we use n
                 /^[ \t]*\`\`\`/ {
-                    s/\$/${_cit:-}/
+                    s/\$/${_cit-}/
                     : a
                     n
                     s/^/$lws/
-                    /^[ \t]*\`\`\`/ { s/^/${_cri:-}/; b z; }
+                    /^[ \t]*\`\`\`/ { s/^/${_cri-}/; b z; }
                     b a
                     : z
                 }
