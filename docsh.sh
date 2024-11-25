@@ -38,6 +38,9 @@ docsh() {
         the source code, and also be well formatted when viewing a function with the
         \`type\` command.
 
+        The return status of \`docsh\` is 0 on successful printing of docstrings,
+        otherwise > 0. This may change if a '-t' argument is implemented.
+
         Options
 
           -D
@@ -58,29 +61,47 @@ docsh() {
 
         Examples
 
-          func1()
-          {
-              # It is recommended to define the docstr within a conditional block or
-              # function, so that it still gets printed when running \`type func1\`, but
-              # not when runnning the function with '\`set -x\`'. If using a function, it
-              # is good practice to '\`unset -f\`' it with a return trap.
+        Defining the doc-strings using the colon syntax can be nice and simple:
 
-              [[ \$# -eq 0  ||  \$1 == @(-h|--help) ]] &&
-              {
-                  docsh -TD \"This function prints something useful.
+          ex1() {
 
-                  Usage: func1 [options] <arg>
+              : \"This function prints something useful.
 
-                  This long multi-line string
-                  documents the function.
-                  \"
-                  return 0
-              }
+              Usage: func1 [options] <arg>
+
+              Note: more docs
+              \"
+
+              [[ \$# -eq 0  ||  \$1 == -h ]] && { docsh -TD; return; }
 
               echo 'something useful'
           }
 
-          func2()
+        To use this style in a function that might be run without docsh available, you
+        you can use this block with the test, instead:
+
+              # function docs
+              [[ \$# -eq 0  ||  \$1 == -h ]] && {
+                  [[ -n \$( command -v docsh ) ]] &&
+                      { docsh -TD; return; }
+
+                  declare -pf "\${FUNCNAME[0]}" | head -n \$(( \$LINENO - 5 ))
+                  return
+              }
+
+        On the other hand, defining or passing the doc-strings within a conditional
+        block means that they will still be printed when running \`type <func-name>\`,
+        but not when debugging the function with '\`set -x\`'. This is especially
+        relevant for functions that run with the prompt. To keep this simple, docsh
+        supports the 'false && : ...' idiom for the colon line, which can be used like:
+
+              false && : \"This function prints something useful.
+              ...
+              \"
+
+        TODO: not implemented
+
+          ex4()
           {
               # This general-purpose trap function handles docsh specially in
               # its testing mode:
@@ -94,24 +115,23 @@ docsh() {
               #...
           }
 
-        The return status of docsh is 0 on successful printing of docstrings, otherwise > 0. This may change if a '-t' argument is implemented.
-
         Other Notes
 
         - The motivation for this function comes from wanting simple, Python-style
-        docstrings as expressed by others in this QA:
-          https://stackoverflow.com/questions/54949060/standardized-docstring-self-documentation-of-bash-scripts
+        docstrings in the shell. This has been expressed by others, e.g. in
+        [this QA](https://stackoverflow.com/questions/54949060/standardized-docstring-self-documentation-of-bash-scripts).
 
-        - Here is a blog post that describes a method of including documentation, using
-          heredocs after the null command (:), and using Perl's POD format. Myself, I
-          would prefer markdown (possibly Myst style).
-          https://linuxconfig.org/how-to-embed-documentation-in-bash-scripts
-
+        - [This blog post](https://linuxconfig.org/how-to-embed-documentation-in-bash-scripts)
+          describes a method of including documentation, using heredocs after the null
+          command (:), and using Perl's POD format. I would prefer to support Markdown
+          (possibly MyST style).
         "
         return 0
     }
 
     # TODO:
+    #
+    # - support markdown in the doc-strings, e.g. headings using ##
     #
     # - consider building the test for e.g. '-h' option or 0 args into this command,
     #   so scripts could simply call `docsh -t 0,h "$@" -- '...'` and docsh would either
@@ -259,8 +279,8 @@ docsh() {
         local func_defn
         func_defn=$( declare -pf "$func_nm" ) # | sed '1,2 d; $ d; s/;$//' )
 
-        # parse with awk code from companion file
-        local awk_fn=$( dirname "${BASH_SOURCE[0]}" )/colon_docs.awk
+        # parse func defn with awk code found in the same dir as this file
+        local awk_fn=$( dirname "$( canonpath "${BASH_SOURCE[0]}" )" )/colon_docs.awk
         [[ -r $awk_fn ]] \
             || err_msg 2 "colon_docs.awk not found"
 

@@ -33,7 +33,8 @@
 
 BEGIN {
     # regex to match colon lines
-    r_col = "^[[:blank:]]*:[[:blank:]]*"
+    # - also allows the 'false && : ...' idiom
+    r_col = "^[[:blank:]]*(false && )?:[[:blank:]]*"
 
     docstr = ""
 }
