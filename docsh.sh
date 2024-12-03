@@ -131,7 +131,7 @@ docsh() {
 
     # TODO:
     #
-    # - support markdown in the doc-strings, e.g. headings using ##
+    # - support markdown in the doc-strings, e.g. headings using ##, links
     #
     # - consider building the test for e.g. '-h' option or 0 args into this command,
     #   so scripts could simply call `docsh -t 0,h "$@" -- '...'` and docsh would either
@@ -185,66 +185,6 @@ docsh() {
     # set func_nm if not specified
     [[ -z ${func_nm-} ]] && func_nm=${FUNCNAME[1]-}
 
-    # _colon_docs() {
-
-    #     # print any lines with leading ': ' at the top of the function definition
-    #     # e.g.
-    #     #   func ()
-    #     #   {
-    #     #       : this is
-    #     #       : the docstring
-    #     #       : of the function
-    #     #   }
-
-    #     local _filt
-
-    #     _filt='
-    #         # print next matching lines without the leading chars or last semicolons
-    #         /^[[:blank:]]*:[[:blank:]]?/ {
-    #             s/^[[:blank:]]*:[[:blank:]]?//
-    #             s/;$//
-    #             p; d; }
-
-    #         # quit on first non-matching line
-    #         q
-    #     '
-
-    #     sed -nE "$_filt" <<< "$1"
-    # }
-
-    # _here_docs() {
-
-    #     local _filt mrkr ln
-
-    #     # capture EOF marker and line no. of here-doc start
-    #     _filt="
-    #         # test for here-doc start
-    #         s/^[[:blank:]]*:[[:blank:]]*<<-?[[:blank:]]?['\"]?([[:alnum:]]+)['\"]?$/\1/
-
-    #         # branch if found
-    #         t h
-
-    #         # quit on fail
-    #         q
-
-    #         # print the here-doc EOF marker and line number
-    #         : h
-    #         p; =; q
-    #     "
-    #     read -r -d '' mrkr ln < <( sed -nE "$_filt" <<< "$1" )
-
-    #     # print here-doc, if any
-    #     [[ -z $mrkr ]] ||
-    #     {
-    #         _filt="
-    #             1 d
-    #             \$ d
-    #             $ln,/^[[:blank:]]*$mrkr$/ { p; d; }
-    #         "
-
-    #         sed -nE "$_filt" <<< "$1"
-    #     }
-    # }
 
     _strip_ws() {
 
@@ -284,19 +224,9 @@ docsh() {
         [[ -r $awk_fn ]] \
             || err_msg 2 "colon_docs.awk not found"
 
-        # The previous _here_docs, _colon_docs func have been
-        # moved to awk
+        # The previous _here_docs, _colon_docs, etc. functions have been rewritten in awk
         docs_body=$( awk -f "$awk_fn" -- - <<< "$func_defn" )
 
-
-        # test for here-doc or multi-line string
-        # docs_body=$( _here_docs "$func_defn" )
-
-        # [[ -n $docs_body ]] ||
-        #     docs_body=$( _ml_str_docs "$func_defn" )
-
-        # [[ -n $docs_body ]] ||
-        #     docs_body=$( _colon_docs "$func_defn" )
 
         if [[ $( wc -l <<< "$docs_body" ) -eq 1 ]]
         then

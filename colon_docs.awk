@@ -34,10 +34,21 @@
 BEGIN {
     # regex to match colon lines
     # - also allows the 'false && : ...' idiom
-    r_col = "^[[:blank:]]*(false && )?:[[:blank:]]*"
+    #r_col = "^[[:blank:]]*(false && )?:[[:blank:]]*"
+    r_col = "^[[:blank:]]*(false[[:blank:]]+&&[[:blank:]]+)?:[[:blank:]]+"
+
+    # - also sometimes good to allow the 'docsh -TD "...' idiom
+    r_dcsh = "^[[:blank:]]*docsh[[:blank:]]+(-[[:alnum:]]+[[:blank:]]+)*"
+
+    # regex for here-doc start
+    r_hds = ( r_col "<<-?[[:blank:]]?['\"]?([[:alnum:]_]+)['\"]?$" )
 
     docstr = ""
 }
+
+# debug
+# { print "parsing line: <" $0 ">" > "/dev/stderr"; }
+
 
 # Skip first 2 lines
 NR<=2 { next; }
@@ -45,24 +56,32 @@ NR<=2 { next; }
 # Skip empty lines, e.g. after a here-doc
 /^[[:blank:]]*$/ { next; }
 
-# Quit non colon lines
-$0 !~ r_col { exit ( length(docstr) == 0 ); }
+# Skip a test on line 3, e.g. [[ $# -eq 0 ]] && { ...
+# - NB, no matter how it's written in the source, declare -pf will always print the
+#   brace on the same line as [[ ... ]].
+{ if ( NR == 3  &&  $0 ~ /^[[:blank:]]*\[\[/ ) next; }
+
+# Quit on other non colon lines
+$0 !~ r_col  &&  $0 !~ (r_dcsh "['\"]") \
+    { exit ( length(docstr) == 0 ); }
 
 # Main loop
 {
-    # here-docs
-    if ( read_heredocs() ) {
-        # success
+    # test for various doc forms
+    if ( match($0, r_hds) ) {
+        # colon here-doc found
+        read_heredocs()
     }
     else if ( read_quotdocs("'") || read_quotdocs("\"") ) {
-        # success
+        # quoted colon doc line was found and read to docstr
     }
-    else if ( read_colondocs() ) {
-        # success
+    else if ( match($0, r_col) ) {
+        # unquoted colon string
+        read_colondocs()
     }
     else {
         # no match
-        # - this shouldn't happen, as the code is currently written
+        # - this shouldn't happen, as the test above should have quit
         print "no q-docs on line " NR ": " $0 > "/dev/stderr"
     }
     next
@@ -80,40 +99,26 @@ END {
 
 function read_colondocs() {
 
-    if ( match($0, r_col) ) {
+    # - the shell will have stripped repeated whitespace
 
-        # unquoted colon string
-        # - the shell will have stripped repeated whitespace
+    # match: RSTART has start index (from 1), RLENGTH has char length of match
+    # - leave off the end semicolon
+    s = substr($0, RLENGTH+1, length($0)-RLENGTH-1)
 
-        # match: RSTART has start index (from 1), RLENGTH has char length of match
-        # - leave off the end semicolon
-        s = substr($0, RLENGTH+1, length($0)-RLENGTH-1)
-
-        docstr = docstr s "\n"
-
-        # report success
-        return 1
-    }
-    else {
-
-        # no match
-        # - this shouldn't happen, as the code is currently written
-        return 0
-    }
+    docstr = docstr s "\n"
 }
 
 function read_quotdocs(q) {
 
-    # regex to match colon lines and end quoted section
-    r_qs = ( r_col q )
-
-    if ( match($0, r_qs) ) {
+    if ( match($0, r_col q) || match($0, r_dcsh q) ) {
 
         # quoted string
-        # match: RSTART has start index (from 1), RLENGTH has char length of match
+        # match(s,r): RSTART has start index (from 1), RLENGTH has char length of match
+        # substr(s,i,[n]): returns substring of s starting at i
         s = substr($0, RLENGTH + 1)
 
-        # print "substr <" s "> from <" $0 ">" > "/dev/stderr" # debug
+        # debug
+        # print "substr <" s "> from <" $0 ">" > "/dev/stderr"
 
         # test for multi-line quote, in which line won't end with ';'
         while ( ! match(s, ";$") ) {
@@ -123,7 +128,9 @@ function read_quotdocs(q) {
             docstr = docstr s "\n"
 
             if ( ! getline s ) break
-            # print "continuing with <" s ">" > "/dev/stderr" # debug
+
+            # debug
+            # print "continuing with <" s ">" > "/dev/stderr"
         }
 
         # string has ended
@@ -174,40 +181,27 @@ function read_heredocs() {
     #       ...
     #   }
 
-    # regex for here-doc start
-    r_hds = ( r_col "<<-?[[:blank:]]?['\"]?([[:alnum:]_]+)['\"]?$" )
+    # - capture EOF marker
+    #   match: RSTART has start index (from 1), RLENGTH has char length of match
+    if ( match($0, /[[:alnum:]_]+/) ) {
 
-    if ( match($0, r_hds) ) {
-
-        # here-doc found
-        # - capture EOF marker
-        #   match: RSTART has start index (from 1), RLENGTH has char length of match
-        if ( match($0, /[[:alnum:]_]+/) ) {
-
-            eof_mrkr = substr($0, RSTART, RLENGTH)
-        }
-        else {
-            print "eof_mrkr not found"
-            exit 2
-        }
-
-        # read until EOF
-        getline s
-
-        while ( ! match(s, "^[[:blank:]]*" eof_mrkr "$") ) {
-
-            # string continues
-            docstr = docstr s "\n"
-
-            if ( ! getline s ) break
-            # print "continuing with <" s ">" > "/dev/stderr" # debug
-        }
-
-        return 1
+        eof_mrkr = substr($0, RSTART, RLENGTH)
     }
     else {
-        # no match
-        return 0
+        print "eof_mrkr not found"
+        exit 2
+    }
+
+    # read until EOF
+    getline s
+
+    while ( ! match(s, "^[[:blank:]]*" eof_mrkr "$") ) {
+
+        # string continues
+        docstr = docstr s "\n"
+
+        if ( ! getline s ) break
+        # print "continuing with <" s ">" > "/dev/stderr" # debug
     }
 }
 
