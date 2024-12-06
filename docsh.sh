@@ -260,7 +260,8 @@ docsh() {
         shift
 
     else
-        IFS=$'\n' docs_body="$*"
+        # use null command to prevent IFS from being set permanently
+        IFS=$'\n' : docs_body="$*"
         shift $#
     fi
 
