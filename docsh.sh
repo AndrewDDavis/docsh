@@ -167,7 +167,7 @@ docsh() {
 
     # Parse args
     local OPT OPTARG OPTIND=1
-    local show_title desc doc_tests func_nm
+    local show_title='' desc doc_tests func_nm
 
     while getopts "d:Df:t:T" OPT
     do
@@ -185,6 +185,9 @@ docsh() {
     # set func_nm if not specified
     [[ -z ${func_nm-} ]] && func_nm=${FUNCNAME[1]-}
 
+    # check
+    [[ -n $show_title  &&  -z $func_nm  ]] &&
+        err_msg 2 "No func_nm to use as title"
 
     _strip_ws() {
 
@@ -261,7 +264,11 @@ docsh() {
 
     else
         # use null command to prevent IFS from being set permanently
-        IFS=$'\n' : docs_body="$*"
+        # - this appears fragile: only works for $*, not ${arr[*]}, undocumented
+        # IFS=$'\n' : docs_body="$*"
+
+        # better documented way of collecting the arguments into a string with newlines
+        docs_body=$( printf '%s\n' "$@" )
         shift $#
     fi
 
@@ -286,7 +293,7 @@ docsh() {
 
 
     # Print header from title and/or description
-    if [[ -n ${show_title-} ]]
+    if [[ -n $show_title ]]
     then
         # Stylize title and add extra newlines
         printf '\n%s%s' "$lws" "${_cul-}${_cbo-}$func_nm${_crb-}${_cru-}"
