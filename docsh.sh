@@ -2,11 +2,11 @@ docsh() {
 
     [[ $# -gt 0  &&  $1 == @(-h|--help) ]] && {
 
-        docsh -DT "Print documentation for shell functions and scripts.
+        : "Print documentation for shell functions and scripts.
 
         Usage
 
-          docsh [options] [ - | doc-string ...]
+          docsh [options] [ - | <func-name> | doc-string ...]
 
         The <doc-string> parameter represents the documentation to be printed, and may
         be a single-line string, a multi-line string, or a series of strings. A series
@@ -17,17 +17,24 @@ docsh() {
         special characters like \\\$ and \\\`. Refer to 'Quoting' in 'man bash'. If the
         argument '-' is given as the doc-string, the doc-string is read from STDIN.
 
-        As an alternative to passing the doc-strings on the command line, the the '-f'
-        option can be used to get the doc-strings from the function. In that case, the
-        function should have its initial lines starting with whitespace and colons, e.g.
-        '    : '. Any comments in the function definition are ignored, as they are not
-        output by 'declare -pf'. For very simple docs of only a few lines, multiple
-        colon lines may suffice, but for longer docs, or those that contain characters
-        like '(', '<' or '$', a quoted here-doc could be used, like
-        ' : << 'EOF'\n ...\nEOF'. In this case, the 'EOF' marker may be preceded by any
-        whitespace, whether the here-doc is invoked with '<<' or '<<-', and must be
-        followed by a newline. A simpler option, though, is simply a multi-line string.
-        E.g. ' : \" ...\n ...\"'.
+        If a function name is passed as the only positional argument, it is used in the
+        same way as with the '-f' option. In this case, the doc-strings are obtained
+        from the initial lines of the function definition. These should start with a
+        colon (':') followed by and possibly preceded by whitespace , e.g. '    : '. The
+        colon command is a null shell command that ignores its arguments and returns
+        true. Comments in the function definition are ignored, as they are not printed
+        by \`'declare -pf'\`. The doc-strings may be defined over several lines, all
+        preceded by a colon, but a single multi-line string is recommended, e.g.:
+
+          : \"this is the first line of the doc-strings
+
+          further details about the function
+          that's it, good luck
+          \"
+
+        A quoted here-doc could also be used, as in ' : << 'EOF'\\n ...\\nEOF'. In this
+        case, the 'EOF' marker may be preceded by any whitespace, whether the here-doc
+        is invoked with '<<' or '<<-', and must be followed by a newline.
 
         TODO (needs testing): As a third option, the doc-strings may be placed in a
         separate file, then referenced from the first line of the function, like
@@ -50,14 +57,14 @@ docsh() {
           -d <str>
           : Render description as in -D, but use the provided string.
 
+          -f <func-name>
+          : Get the doc-strings from the function definition. See formatting notes,
+            above.
+
           -T
           : Render a title above the printed docstring, which is the name of the calling
             function or the function indicated by '-f'. An extra newline is also added
             after the docstring.
-
-          -f <func-name>
-          : Get the documentation from the function definition. See formatting notes,
-            above.
 
         Examples
 
@@ -85,7 +92,7 @@ docsh() {
                   [[ -n \$( command -v docsh ) ]] &&
                       { docsh -TD; return; }
 
-                  declare -pf "\${FUNCNAME[0]}" | head -n \$(( \$LINENO - 5 ))
+                  declare -pf \"\${FUNCNAME[0]}\" | head -n \$(( \$LINENO - 5 ))
                   return
               }
 
@@ -126,7 +133,8 @@ docsh() {
           command (:), and using Perl's POD format. I would prefer to support Markdown
           (possibly MyST style).
         "
-        return 0
+        docsh -DT
+        return
     }
 
     # TODO:
@@ -166,28 +174,34 @@ docsh() {
     ' RETURN
 
     # Parse args
-    local OPT OPTARG OPTIND=1
+    local flag OPTARG OPTIND=1
     local show_title='' desc doc_tests func_nm
 
-    while getopts "d:Df:t:T" OPT
+    while getopts ":d:Df:t:T" flag
     do
-        case $OPT in
+        case $flag in
             ( d )  desc=$OPTARG ;;
             ( D )  desc=_from_body ;;
             ( f )  func_nm=$OPTARG ;;
             ( T )  show_title=1 ;;
             ( t )  doc_tests=$OPTARG; echo not implemented; return 2 ;;  # TODO
-            ( ? )  err_msg 1 "Args: $*" ;;
+            ( \? ) err_msg 2 "Unknown option: '-$OPTARG'" ;;
+            ( : )  err_msg 2 "Missing arg for '-$OPTARG'" ;;
         esac
     done
     shift $(( OPTIND - 1 ))
 
     # set func_nm if not specified
-    [[ -z ${func_nm-} ]] && func_nm=${FUNCNAME[1]-}
+    [[ -z ${func_nm-} ]] && {
 
-    # check
-    [[ -n $show_title  &&  -z $func_nm  ]] &&
-        err_msg 2 "No func_nm to use as title"
+        if [[ $# -eq 1 ]] && grep -q 'function' <<< $( type -at "$1" )
+        then
+            func_nm=$1
+            shift
+        else
+            func_nm=${FUNCNAME[1]-}
+        fi
+    }
 
     _strip_ws() {
 
@@ -216,8 +230,26 @@ docsh() {
     # Get doc-strings from remaining arg(s) or function definition
     local docs_body
 
-    if [[ $# -eq 0 ]]
+    if [[ $# -eq 1  &&  $1 == '-' ]]
     then
+        docs_body=$( cat - )
+        shift
+
+    elif [[ $# -gt 0 ]]
+    then
+        # collect all arguments into a string with newlines
+        docs_body=$( printf '%s\n' "$@" )
+        shift $#
+
+        # vvv old idea
+        # use null command to prevent IFS from being set permanently
+        # - this appears fragile: only works for $*, not ${arr[*]}, undocumented
+        # IFS=$'\n' : docs_body="$*"
+
+    else
+        [[ -z $func_nm ]] &&
+            err_msg 2 "No func_nm to use for doc-strings"
+
         # read function definition
         local func_defn
         func_defn=$( declare -pf "$func_nm" ) # | sed '1,2 d; $ d; s/;$//' )
@@ -256,20 +288,6 @@ docsh() {
             # didn't get any docs
             return 1
         fi
-
-    elif [[ $1 == '-' ]]
-    then
-        docs_body=$( cat - )
-        shift
-
-    else
-        # use null command to prevent IFS from being set permanently
-        # - this appears fragile: only works for $*, not ${arr[*]}, undocumented
-        # IFS=$'\n' : docs_body="$*"
-
-        # better documented way of collecting the arguments into a string with newlines
-        docs_body=$( printf '%s\n' "$@" )
-        shift $#
     fi
 
 
@@ -291,10 +309,24 @@ docsh() {
     [[ -z ${_cbo-}  &&  $( type -t str_csi_vars ) == function ]] &&
         str_csi_vars -d
 
+    # - using this, as the _cbo version has prompt ignore chars in it too (like \001),
+    #   which messes up 'less' display
+    _cbo=$'\E[1m'
+    _cdm=$'\E[2m'
+    _cit=$'\E[3m'
+    _cul=$'\E[4m'
+    _crb=$'\E[22m'
+    _crd=$'\E[22m'
+    _cri=$'\E[23m'
+    _cru=$'\E[24m'
+
 
     # Print header from title and/or description
     if [[ -n $show_title ]]
     then
+        [[ -z $func_nm ]] &&
+            err_msg 2 "No func_nm to use as title"
+
         # Stylize title and add extra newlines
         printf '\n%s%s' "$lws" "${_cul-}${_cbo-}$func_nm${_crb-}${_cru-}"
 
