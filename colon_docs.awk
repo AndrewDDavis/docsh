@@ -34,8 +34,9 @@
 BEGIN {
     # regex to match colon lines
     # - also allows the 'false && : ...' idiom
+    # - and, for functions wrapped in (...), ( : "...
     #r_col = "^[[:blank:]]*(false && )?:[[:blank:]]*"
-    r_col = "^[[:blank:]]*(false[[:blank:]]+&&[[:blank:]]+)?:[[:blank:]]+"
+    r_col = "^[[:blank:]]*(\( |false[[:blank:]]+&&[[:blank:]]+)?:[[:blank:]]+"
 
     # - also sometimes good to allow the 'docsh -TD "...' idiom
     r_dcsh = "^[[:blank:]]*docsh[[:blank:]]+(-[[:alnum:]]+[[:blank:]]+)*"
