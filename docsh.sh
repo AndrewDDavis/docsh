@@ -309,17 +309,18 @@ docsh() {
     [[ -z ${_cbo-}  &&  $( type -t str_csi_vars ) == function ]] &&
         str_csi_vars -d
 
-    # - using this, as the _cbo version has prompt ignore chars in it too (like \001),
+    # - not using _cbo, as it has prompt ignore chars in it too (like \001),
     #   which messes up 'less' display
-    _cbo=$'\E[1m'
-    _cdm=$'\E[2m'
-    _cit=$'\E[3m'
-    _cul=$'\E[4m'
-    _crb=$'\E[22m'
-    _crd=$'\E[22m'
-    _cri=$'\E[23m'
-    _cru=$'\E[24m'
-
+    local _bld _dim _ita _uln _rsb _rsd _rsi _rsu _rst
+    _bld=$'\e[1m'
+    _dim=$'\e[2m'
+    _ita=$'\e[3m'
+    _uln=$'\e[4m'
+    _rsb=$'\e[22m'
+    _rsd=$'\e[22m'
+    _rsi=$'\e[23m'
+    _rsu=$'\e[24m'
+    _rst=$'\e[0m'
 
     # Print header from title and/or description
     if [[ -n $show_title ]]
@@ -328,7 +329,7 @@ docsh() {
             err_msg 2 "No func_nm to use as title"
 
         # Stylize title and add extra newlines
-        printf '\n%s%s' "$lws" "${_cul-}${_cbo-}$func_nm${_crb-}${_cru-}"
+        printf '\n%s%s' "$lws" "${_uln}${_bld}$func_nm${_rsb}${_rsu}"
 
         if [[ -n ${desc-} ]]
         then
@@ -355,16 +356,16 @@ docsh() {
     local style_filt
 
     style_filt="# Bold styling for common headings
-                s/^((Usage|Option|Command|Example|Note|Notable|Patterns)[^:]*)/${_cbo-}\1${_crb-}/
+                s/^((Usage|Option|Command|Example|Note|Notable|Patterns)[^:]*)/${_bld}\1${_rsb}/
 
                 # Dim URLs (regex is a bit naiive)
-                s|([a-zA-Z0-9]+://[a-zA-Z0-9@/.?&=-]+)|${_cdm}\1${_crd}|
+                s|([a-zA-Z0-9]+://[a-zA-Z0-9@/.?&=-]+)|${_dim}\1${_rsd}|
 
                 # Consider markdown links like [foo](http://bar...), or [foo]: http://...
                 # ...
 
                 # Italics for text between \`...\`
-                s/(^|[^\`])\`([^\`]+)\`/\1${_cit-}\2${_cri-}/g
+                s/(^|[^\`])\`([^\`]+)\`/\1${_ita}\2${_rsi}/g
 
                 # Add leading whitespace, for style
                 s/^/$lws/
@@ -372,11 +373,11 @@ docsh() {
                 # Italics for multi-line text between \`\`\`...\`\`\`
                 # - lws must be added whenever we use n
                 /^[ \t]*\`\`\`/ {
-                    s/\$/${_cit-}/
+                    s/\$/${_ita}/
                     : a
                     n
                     s/^/$lws/
-                    /^[ \t]*\`\`\`/ { s/^/${_cri-}/; b z; }
+                    /^[ \t]*\`\`\`/ { s/^/${_rsi}/; b z; }
                     b a
                     : z
                 }
