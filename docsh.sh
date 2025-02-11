@@ -254,17 +254,18 @@ docsh() {
         local func_defn
         func_defn=$( declare -pf "$func_nm" ) # | sed '1,2 d; $ d; s/;$//' )
 
-        # parse func defn with awk code found in the same dir as this file
-        local awk_fn=$( dirname "$( canonpath "${BASH_SOURCE[0]}" )" )/colon_docs.awk
-        [[ -r $awk_fn ]] \
-            || err_msg 2 "colon_docs.awk not found"
+        # parse func defn with awk code found in the same dir as this source file
+        local awk_fn
+        awk_fn=$( dirname "$( canonpath "${BASH_SOURCE[0]}" )" )/colon_docs.awk
+        [[ -r $awk_fn ]] ||
+            err_msg 2 "colon_docs.awk not found"
 
         # The previous _here_docs, _colon_docs, etc. functions have been rewritten in awk
-        docs_body=$( awk -f "$awk_fn" -- - <<< "$func_defn" )
+        docs_body=$( awk -f "$awk_fn" -- - <<< "$func_defn" ) \
+            || return
 
+        [[ $( wc -l <<< "$docs_body" ) -eq 1 ]] && {
 
-        if [[ $( wc -l <<< "$docs_body" ) -eq 1 ]]
-        then
             # check for file reference
             # e.g. ' : docsh ./myfile.txt' or ' : cat /path/to/file.md'
             local _filt _fn
@@ -279,15 +280,8 @@ docsh() {
             _fn=$( sed -nE "$_filt" <<< "$docs_body" )
 
             [[ -n $_fn  &&  -r $_fn ]] &&
-            {
                 docs_body=$( cat "$_fn" )
-            }
-
-        elif [[ -z "$docs_body" ]]
-        then
-            # didn't get any docs
-            return 1
-        fi
+        }
     fi
 
 
