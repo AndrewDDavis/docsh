@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 docsh() {
 
     [[ $# -gt 0  &&  $1 == @(-h|--help) ]] && {
