@@ -1,4 +1,31 @@
-#!/usr/bin/env bash
+# Notes on function availability and dependencies:
+#
+# - Many other functions in the library rely on docsh, so it's important to make sure
+#   it's available with very little hassle.
+#
+# - It's also important for docsh to be able to find its colon_docs awk script. If the
+#   docsh function is exported, then called from a script, the BASH_SOURCE path that
+#   refers to docsh is "environment", so the path of docsh is lost. Thus, exporting
+#   docsh is no help to make it available to other scripts and functions.
+#
+# - This seems to imply that either docsh must be imported as part of a library of
+#   functions, or docsh must be a script (not ideal, since it needs FUNCNAME).
+#
+# - So, reorg the init files so that files that only set env vars and aliases go into
+#   ~/.bashrc_env.d/, and files with functions go into ~/.bash_library.d/.
+#
+# - Now the funcs are stored in ~/.bash_library.d, and import_func can be used to import
+#   docsh and other functions from external script files, as necessary.
+
+# import dependencies
+[[ $( builtin type -t import_func ) == function ]] || {
+  source ~/.bash_library.d/import_func.sh \
+      || return 63
+}
+
+import_func err_msg canonpath \
+  || return 62
+
 
 docsh() {
 
@@ -6,9 +33,7 @@ docsh() {
 
         : "Print documentation for shell functions and scripts.
 
-        Usage
-
-          docsh [options] [ - | <func-name> | doc-string ...]
+        Usage: docsh [options] [ - | <func-name> | doc-string ...]
 
         The <doc-string> parameter represents the documentation to be printed, and may
         be a single-line string, a multi-line string, or a series of strings. A series
@@ -196,7 +221,7 @@ docsh() {
     # set func_nm if not specified
     [[ -z ${func_nm-} ]] && {
 
-        if [[ $# -eq 1 ]] && grep -q 'function' <<< $( type -at "$1" )
+        if [[ $# -eq 1  && $( builtin type -at "$1" ) == *function* ]]
         then
             func_nm=$1
             shift
@@ -204,6 +229,14 @@ docsh() {
             func_nm=${FUNCNAME[1]-}
         fi
     }
+
+    # sed and awk are both used below
+    local awk_cmd sed_cmd
+    awk_cmd=$( builtin type -P awk ) \
+        || return 9
+
+    sed_cmd=$( builtin type -P sed ) \
+        || return 9
 
     _strip_ws() {
 
@@ -222,10 +255,10 @@ docsh() {
             }
         '
 
-        ws=$( sed -nE "$_filt" <<< "$1" )
+        ws=$( "$sed_cmd" -nE "$_filt" <<< "$1" )
 
         # apply the filter
-        sed -E "s/^$ws//" <<< "$1"
+        "$sed_cmd" -E "s/^$ws//" <<< "$1"
     }
 
 
@@ -258,12 +291,12 @@ docsh() {
 
         # parse func defn with awk code found in the same dir as this source file
         local awk_fn
-        awk_fn=$( dirname "$( canonpath "${BASH_SOURCE[0]}" )" )/colon_docs.awk
+        awk_fn=$( dirname -- "$( canonpath "${BASH_SOURCE[0]}" )" )/colon_docs.awk
         [[ -r $awk_fn ]] ||
             err_msg 2 "colon_docs.awk not found"
 
         # The previous _here_docs, _colon_docs, etc. functions have been rewritten in awk
-        docs_body=$( awk -f "$awk_fn" -- - <<< "$func_defn" ) \
+        docs_body=$( "$awk_cmd" -f "$awk_fn" -- - <<< "$func_defn" ) \
             || return
 
         [[ $( wc -l <<< "$docs_body" ) -eq 1 ]] && {
@@ -279,7 +312,7 @@ docsh() {
                 : h
                 p; d
             '
-            _fn=$( sed -nE "$_filt" <<< "$docs_body" )
+            _fn=$( "$sed_cmd" -nE "$_filt" <<< "$docs_body" )
 
             [[ -n $_fn  &&  -r $_fn ]] &&
                 docs_body=$( cat "$_fn" )
@@ -294,15 +327,15 @@ docsh() {
     # Get description from line 1 of docs_body, if indicated
     [[ ${desc-} == _from_body ]] &&
     {
-        desc=$( sed "1 q" <<< "$docs_body" )
-        docs_body=$( sed "1 d" <<< "$docs_body" )
+        desc=$( "$sed_cmd" "1 q" <<< "$docs_body" )
+        docs_body=$( "$sed_cmd" "1 d" <<< "$docs_body" )
     }
 
     # Add a bit of leading space to each line, for style
     local lws='  '
 
     # Import ANSI strings for text styles, if necessary
-    [[ -z ${_cbo-}  &&  $( type -t str_csi_vars ) == function ]] &&
+    [[ -z ${_cbo-}  &&  $( builtin type -t str_csi_vars ) == function ]] &&
         str_csi_vars -d
 
     # - not using _cbo, as it has prompt ignore chars in it too (like \001),
@@ -379,5 +412,5 @@ docsh() {
                 }
                "
 
-    sed -E "$style_filt" <<< "$docs_body"
+    "$sed_cmd" -E "$style_filt" <<< "$docs_body"
 }
