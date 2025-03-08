@@ -15,16 +15,21 @@
 #   ~/.bashrc_env.d/, and files with functions go into ~/.bash_library.d/.
 #
 # - Now the funcs are stored in ~/.bash_library.d, and import_func can be used to import
-#   docsh and other functions from external script files, as necessary.
+#   docsh and other functions from external script files, as necessary. This function
+#   assumes that import func is available, having been imported in ~/.bashrc.
 
-# import dependencies
-[[ $( builtin type -t import_func ) == function ]] || {
-  source ~/.bash_library.d/import_func.sh \
-      || return 63
-}
-
-import_func err_msg canonpath \
+# dependencies
+import_func canonpath err_msg \
   || return 62
+
+
+# To make a poor-man's docsh within a function, you could do something like:
+#
+# if ! command -v docsh >/dev/null
+# then
+#     declare -pf "${FUNCNAME[0]}" \
+#         | head -n $(( LINENO - 10 ))
+# fi
 
 
 docsh() {
