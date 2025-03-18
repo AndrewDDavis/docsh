@@ -19,8 +19,8 @@
 #   assumes that import func is available, having been imported in ~/.bashrc.
 
 # dependencies
-import_func canonpath err_msg \
-  || return 62
+import_func canonpath err_msg csi_strvars \
+  || return 63
 
 
 # To make a poor-man's docsh within a function, you could do something like:
@@ -340,8 +340,8 @@ docsh() {
     local lws='  '
 
     # Import ANSI strings for text styles, if necessary
-    [[ -z ${_cbo-}  &&  $( builtin type -t str_csi_vars ) == function ]] &&
-        str_csi_vars -d
+    [[ -n ${_cbo-} ]] ||
+        csi_strvars -d
 
     # - not using _cbo, as it has prompt ignore chars in it too (like \001),
     #   which messes up 'less' display
