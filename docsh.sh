@@ -12,9 +12,9 @@
 #   functions, or docsh must be a script (not ideal, since it needs FUNCNAME).
 #
 # - So, reorg the init files so that files that only set env vars and aliases go into
-#   ~/.bashrc_env.d/, and files with functions go into ~/.bash_library.d/.
+#   ~/.bashrc.d/, and files with functions go into ~/.bash_lib/.
 #
-# - Now the funcs are stored in ~/.bash_library.d, and import_func can be used to import
+# - Now the funcs are stored in ~/.bash_lib/, and import_func can be used to import
 #   docsh and other functions from external script files, as necessary. This function
 #   assumes that import func is available, having been imported in ~/.bashrc.
 
