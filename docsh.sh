@@ -19,7 +19,7 @@
 #   assumes that import func is available, having been imported in ~/.bashrc.
 
 # dependencies
-import_func canonpath err_msg csi_strvars \
+import_func physpath err_msg csi_strvars \
   || return 63
 
 
@@ -296,7 +296,7 @@ docsh() {
 
         # parse func defn with awk code found in the same dir as this source file
         local awk_fn
-        awk_fn=$( dirname -- "$( canonpath "${BASH_SOURCE[0]}" )" )/colon_docs.awk
+        awk_fn=$( dirname -- "$( physpath "${BASH_SOURCE[0]}" )" )/colon_docs.awk
         [[ -r $awk_fn ]] ||
             err_msg 2 "colon_docs.awk not found"
 
