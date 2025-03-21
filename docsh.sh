@@ -19,7 +19,7 @@
 #   assumes that import func is available, having been imported in ~/.bashrc.
 
 # dependencies
-import_func physpath err_msg csi_strvars \
+import_func physpath csi_strvars err_msg trap-err \
   || return 63
 
 
@@ -30,6 +30,34 @@ import_func physpath err_msg csi_strvars \
 #     declare -pf "${FUNCNAME[0]}" \
 #         | head -n $(( LINENO - 10 ))
 # fi
+
+# TODO:
+#
+# - add '(' to the possible preamble in a function defn to ignore
+#
+# - troubleshoot the 'split-longopt' docs: stops printing during ';;'
+#
+# - support markdown in the doc-strings, e.g. headings using ##, links
+#
+# - consider building the test for e.g. '-h' option or 0 args into this command,
+#   so scripts could simply call `docsh -t 0,h "$@" -- '...'` and docsh would either
+#   return 0 or print the usage and return 1; then a return call after the docsh
+#   call would maintain the status
+#
+#   docstr for this:
+#
+#      -t <str>
+#      : Test arguments for conditions. The string argument is a comma-separated list
+#        of tests to perform, e.g. \"0,h\". If any of the tests are true, the
+#        function prints usage and returns false. Tests:
+#        0 : test for 0 arguments
+#
+# - or i could set an error or return trap in the shell, and have it call docsh?
+#
+# - for functions with long docs, it would be better to put the docs in a separate
+#   file, and have a hint in the function body, e.g.:
+#   : to see this functions documentation, issue 'func -h'
+#   the separate file could be e.g. func.docsh within the same directory.
 
 
 docsh() {
@@ -169,31 +197,6 @@ docsh() {
         return
     }
 
-    # TODO:
-    #
-    # - support markdown in the doc-strings, e.g. headings using ##, links
-    #
-    # - consider building the test for e.g. '-h' option or 0 args into this command,
-    #   so scripts could simply call `docsh -t 0,h "$@" -- '...'` and docsh would either
-    #   return 0 or print the usage and return 1; then a return call after the docsh
-    #   call would maintain the status
-    #
-    #   docstr for this:
-    #
-    #      -t <str>
-    #      : Test arguments for conditions. The string argument is a comma-separated list
-    #        of tests to perform, e.g. \"0,h\". If any of the tests are true, the
-    #        function prints usage and returns false. Tests:
-    #        0 : test for 0 arguments
-    #
-    # - or i could set an error or return trap in the shell, and have it call docsh?
-    #
-    # - for functions with long docs, it would be better to put the docs in a separate
-    #   file, and have a hint in the function body, e.g.:
-    #   : to see this functions documentation, issue 'func -h'
-    #   the separate file could be e.g. func.docsh within the same directory.
-
-
     # return on non-zero exit
     trap '
         trap-err $?
@@ -205,10 +208,10 @@ docsh() {
         trap - ERR RETURN
     ' RETURN
 
-    # Parse args
-    local flag OPTARG OPTIND=1
-    local show_title='' desc doc_tests func_nm
+    # Defaults and Arg-parsing
+    local desc func_nm show_title doc_tests
 
+    local flag OPTARG OPTIND=1
     while getopts ":d:Df:t:T" flag
     do
         case $flag in
@@ -216,12 +219,12 @@ docsh() {
             ( D )  desc=_from_body ;;
             ( f )  func_nm=$OPTARG ;;
             ( T )  show_title=1 ;;
-            ( t )  doc_tests=$OPTARG; echo not implemented; return 2 ;;  # TODO
+            # ( t )  doc_tests=$OPTARG; echo >&2 not implemented; return 2 ;;  # TODO
             ( \? ) err_msg 2 "Unknown option: '-$OPTARG'" ;;
             ( : )  err_msg 2 "Missing arg for '-$OPTARG'" ;;
         esac
     done
-    shift $(( OPTIND - 1 ))
+    shift $(( OPTIND-1 ))
 
     # set func_nm if not specified
     [[ -z ${func_nm-} ]] && {
@@ -357,7 +360,7 @@ docsh() {
     _rst=$'\e[0m'
 
     # Print header from title and/or description
-    if [[ -n $show_title ]]
+    if [[ -n ${show_title-} ]]
     then
         [[ -z $func_nm ]] &&
             err_msg 2 "No func_nm to use as title"
