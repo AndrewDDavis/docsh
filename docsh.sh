@@ -58,6 +58,9 @@ import_func physpath csi_strvars err_msg trap-err \
 #   file, and have a hint in the function body, e.g.:
 #   : to see this functions documentation, issue 'func -h'
 #   the separate file could be e.g. func.docsh within the same directory.
+#
+# - allow functions to put their doc-strings in a separate file, e.g. in a dir of docs
+#   defined in ~/.config/docsh/config or similar.
 
 
 docsh() {
@@ -238,13 +241,18 @@ docsh() {
         fi
     }
 
-    # sed and awk are both used below
-    local awk_cmd sed_cmd
+    # sed, awk, and less (or pager?) are used below
+    local awk_cmd sed_cmd less_cmd
+
     awk_cmd=$( builtin type -P awk ) \
         || return 9
 
     sed_cmd=$( builtin type -P sed ) \
         || return 9
+
+    less_cmd=$( builtin type -P less ) \
+        || return 9
+
 
     _strip_ws() {
 
@@ -359,22 +367,21 @@ docsh() {
     _rsu=$'\e[24m'
     _rst=$'\e[0m'
 
-    # Print header from title and/or description
+    # Stylize header from title and/or description
+    local docs_tdesc
     if [[ -n ${show_title-} ]]
     then
         [[ -z $func_nm ]] &&
             err_msg 2 "No func_nm to use as title"
 
         # Stylize title and add extra newlines
-        printf '\n%s%s' "$lws" "${_uln}${_bld}$func_nm${_rsb}${_rsu}"
+        docs_tdesc=$( printf '\n%s%s' "$lws" "${_uln}${_bld}$func_nm${_rsb}${_rsu}" )
 
-        if [[ -n ${desc-} ]]
-        then
-            printf ' : %s' "$desc"
-        fi
+        [[ -z ${desc-} ]] ||
+            docs_tdesc+=$( printf ' : %s' "$desc" )
 
-        # newline to finish either title or description
-        printf '\n'
+        # newline to finish either title or description (now part of printf below)
+        # docs_tdesc+=$'\n'
 
         # decided against manually underlining the title
         #printf -- '-%.0s' $(seq $((${#title}+2)))  # auto-underline
@@ -386,39 +393,43 @@ docsh() {
     elif [[ -n ${desc-} ]]
     then
         # Less newlines with only description
-        printf '%s%s\n' "$lws" "$desc"
+        docs_tdesc=$( printf '%s%s\n' "$lws" "$desc" )
     fi
 
     # Print docstring body, with style filters
-    local style_filt
+    local style_filt="
+        # Bold styling for common headings
+        s/^((Usage|Option|Command|Example|Note|Notable|Patterns)[^:]*)/${_bld}\1${_rsb}/
 
-    style_filt="# Bold styling for common headings
-                s/^((Usage|Option|Command|Example|Note|Notable|Patterns)[^:]*)/${_bld}\1${_rsb}/
+        # Dim URLs (regex is a bit naiive)
+        s|([a-zA-Z0-9]+://[a-zA-Z0-9@/.?&=-]+)|${_dim}\1${_rsd}|
 
-                # Dim URLs (regex is a bit naiive)
-                s|([a-zA-Z0-9]+://[a-zA-Z0-9@/.?&=-]+)|${_dim}\1${_rsd}|
+        # Consider markdown links like [foo](http://bar...), or [foo]: http://...
+        # ...
 
-                # Consider markdown links like [foo](http://bar...), or [foo]: http://...
-                # ...
+        # Italics for text between \`...\`
+        s/(^|[^\`])\`([^\`]+)\`/\1${_ita}\2${_rsi}/g
 
-                # Italics for text between \`...\`
-                s/(^|[^\`])\`([^\`]+)\`/\1${_ita}\2${_rsi}/g
+        # Add leading whitespace, for style
+        s/^/$lws/
 
-                # Add leading whitespace, for style
-                s/^/$lws/
+        # Italics for multi-line text between \`\`\`...\`\`\`
+        # - lws must be added whenever we use n
+        /^[ \t]*\`\`\`/ {
+            s/\$/${_ita}/
+            : a
+            n
+            s/^/$lws/
+            /^[ \t]*\`\`\`/ { s/^/${_rsi}/; b z; }
+            b a
+            : z
+        }
+    "
 
-                # Italics for multi-line text between \`\`\`...\`\`\`
-                # - lws must be added whenever we use n
-                /^[ \t]*\`\`\`/ {
-                    s/\$/${_ita}/
-                    : a
-                    n
-                    s/^/$lws/
-                    /^[ \t]*\`\`\`/ { s/^/${_rsi}/; b z; }
-                    b a
-                    : z
-                }
-               "
+    docs_body=$( "$sed_cmd" -E "$style_filt" <<< "$docs_body" )
 
-    "$sed_cmd" -E "$style_filt" <<< "$docs_body"
+    # pipe docstrings to less, unless the output is redirected
+    [[ -t 1 ]] \
+        && "$less_cmd" -F < <( printf '%s\n' "$docs_tdesc" "$docs_body" ) \
+        || printf '%s\n' "$docs_tdesc" "$docs_body"
 }
