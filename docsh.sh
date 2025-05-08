@@ -31,11 +31,28 @@ import_func physpath csi_strvars err_msg trap-err \
 #         | head -n $(( LINENO - 10 ))
 # fi
 
+
 # TODO:
 #
 # - add '(' to the possible preamble in a function defn to ignore
 #
 # - troubleshoot the 'split-longopt' docs: stops printing during ';;'
+#
+# - idea to avoid having docstrings print when you run a function with set -x:
+#   put the colon docs in the function source file, but not within the function
+#   definition itself. If the file contains multiple functions, docsh could accept
+#   a word after the : but before the doc-strings that indicates which function
+#   the doc-strings are for. E.g.:
+#
+#   : wrap-txt "wrap text at the limit
+#   ...
+#   "
+#
+#   docsh could even create a variable from the docs in the current shell, but I
+#   actually don't love that... maybe when you type 'docsh name', it searches for
+#   matches to name in ~/.bash_lib, in the form of ': name "...' with [u]grep, if
+#   it doesn't find a function with that name
+#
 #
 # - support markdown in the doc-strings, e.g. headings using ##, links
 #
@@ -65,7 +82,7 @@ import_func physpath csi_strvars err_msg trap-err \
 
 docsh() {
 
-    [[ $# -gt 0  &&  $1 == @(-h|--help) ]] && {
+    [[ $# -gt 0  && $1 == @(-h|--help) ]] && {
 
         : "Print documentation for shell functions and scripts.
 
@@ -196,6 +213,7 @@ docsh() {
           command (:), and using Perl's POD format. I would prefer to support Markdown
           (possibly MyST style).
         "
+
         docsh -DT
         return
     }
@@ -212,10 +230,10 @@ docsh() {
     ' RETURN
 
     # Defaults and Arg-parsing
-    local desc func_nm show_title doc_tests
+    local desc func_nm show_title #doc_tests
 
     local flag OPTARG OPTIND=1
-    while getopts ":d:Df:t:T" flag
+    while getopts ":d:Df:T" flag  # add t: for doc_tests
     do
         case $flag in
             ( d )  desc=$OPTARG ;;
@@ -281,7 +299,7 @@ docsh() {
     # Get doc-strings from remaining arg(s) or function definition
     local docs_body
 
-    if [[ $# -eq 1  &&  $1 == '-' ]]
+    if [[ $# -eq 1  && $1 == '-' ]]
     then
         docs_body=$( cat - )
         shift
@@ -292,18 +310,15 @@ docsh() {
         docs_body=$( printf '%s\n' "$@" )
         shift $#
 
-        # vvv old idea
-        # use null command to prevent IFS from being set permanently
-        # - this appears fragile: only works for $*, not ${arr[*]}, undocumented
-        # IFS=$'\n' : docs_body="$*"
-
     else
         [[ -z $func_nm ]] &&
             err_msg 2 "No func_nm to use for doc-strings"
 
         # read function definition
+        # - prev used sed directly: | sed '1,2 d; $ d; s/;$//'
         local func_defn
-        func_defn=$( declare -pf "$func_nm" ) # | sed '1,2 d; $ d; s/;$//' )
+        func_defn=$( declare -pf "$func_nm" 2>/dev/null ) \
+            || err_msg 3 "unknown function: '$func_nm'"
 
         # parse func defn with awk code found in the same dir as this source file
         local awk_fn
@@ -350,38 +365,27 @@ docsh() {
     # Add a bit of leading space to each line, for style
     local lws='  '
 
-    # Import ANSI strings for text styles, if necessary
-    [[ -n ${_cbo-} ]] ||
-        csi_strvars -d
-
-    # - not using _cbo, as it has prompt ignore chars in it too (like \001),
-    #   which messes up 'less' display
-    local _bld _dim _ita _uln _rsb _rsd _rsi _rsu _rst
-    _bld=$'\e[1m'
-    _dim=$'\e[2m'
-    _ita=$'\e[3m'
-    _uln=$'\e[4m'
-    _rsb=$'\e[22m'
-    _rsd=$'\e[22m'
-    _rsi=$'\e[23m'
-    _rsu=$'\e[24m'
-    _rst=$'\e[0m'
+    # Define ANSI strings for text styles
+    # - Not using _cbo from 'csi_strvars -d' function, as it has prompt ignore
+    #   chars in it too (like \001), which messes up 'less' display
+    local _bld=$'\e[1m' _rsb=$'\e[22m' \
+        _dim=$'\e[2m' _rsd=$'\e[22m' \
+        _ita=$'\e[3m' _rsi=$'\e[23m' \
+        _uln=$'\e[4m' _rsu=$'\e[24m' \
+        _rst=$'\e[0m'
 
     # Stylize header from title and/or description
     local docs_tdesc
     if [[ -n ${show_title-} ]]
     then
-        [[ -z $func_nm ]] &&
-            err_msg 2 "No func_nm to use as title"
+        [[ -z $func_nm ]] \
+            && err_msg 2 "No func_nm to use as title"
 
         # Stylize title and add extra newlines
         docs_tdesc=$( printf '\n%s%s' "$lws" "${_uln}${_bld}$func_nm${_rsb}${_rsu}" )
 
-        [[ -z ${desc-} ]] ||
-            docs_tdesc+=$( printf ' : %s' "$desc" )
-
-        # newline to finish either title or description (now part of printf below)
-        # docs_tdesc+=$'\n'
+        [[ -z ${desc-} ]] \
+            || docs_tdesc+=$( printf ' : %s' "$desc" )
 
         # decided against manually underlining the title
         #printf -- '-%.0s' $(seq $((${#title}+2)))  # auto-underline
@@ -428,8 +432,16 @@ docsh() {
 
     docs_body=$( "$sed_cmd" -E "$style_filt" <<< "$docs_body" )
 
+    local doc_strings
+    if [[ -v docs_tdesc ]]
+    then
+        doc_strings=( "$docs_tdesc" "$docs_body" )
+    else
+        doc_strings=( "$docs_body" )
+    fi
+
     # pipe docstrings to less, unless the output is redirected
     [[ -t 1 ]] \
-        && "$less_cmd" -F < <( printf '%s\n' "$docs_tdesc" "$docs_body" ) \
-        || printf '%s\n' "$docs_tdesc" "$docs_body"
+        && "$less_cmd" -F < <( printf '%s\n' "${doc_strings[@]}" ) \
+        || printf '%s\n' "${doc_strings[@]}"
 }
