@@ -38,6 +38,14 @@ import_func physpath csi_strvars err_msg trap-err \
 #
 # - troubleshoot the 'split-longopt' docs: stops printing during ';;'
 #
+# - handle __version__ variable within the function, or a version string similar to
+#   the docs, like:
+#   : version "version string here
+#       and so on"
+#
+#   and the function docs themselves could be annotated similarly; e.g.:
+#   : func1 "func docs for function func1"
+#
 # - idea to avoid having docstrings print when you run a function with set -x:
 #   put the colon docs in the function source file, but not within the function
 #   definition itself. If the file contains multiple functions, docsh could accept
